@@ -17,6 +17,9 @@ export class PokerEngine {
         action: PlayerAction,
         amount?: number
     ) {
+        if ((action === PlayerAction.BET || action === PlayerAction.RAISE) && (amount == null || amount <= 0 || amount))
+            throw new Error("informe um valor válido")
+
         switch (action) {
             case PlayerAction.FOLD:
                 return this.fold(table, userId)
@@ -62,7 +65,7 @@ export class PokerEngine {
     }
 
     static bet(table: Table, userId: string, amount: number) {
-
+        this.ensureCanAct(table)
         if (!table.canPlayerBet()) throw new Error("Aposta inválida, use raise")
 
         if (amount < table.minRaise) throw new Error(`Aposta mínima: ${table.minRaise}`)

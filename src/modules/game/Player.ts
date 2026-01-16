@@ -18,6 +18,21 @@ export class Player {
         this.socketId = socketId
         this.stack = stack
     }
+    addCard(card: string) {
+        if (this.hand.length >= 2) throw new Error("Jogador já possui cartas na mão")
+
+        this.hand.push(card)
+    }
+
+    setPlayerHand(cards: string[]) {
+        if (cards.length !== 2) throw new Error("Quantidade de cartas inválida")
+
+        this.hand = cards
+    }
+
+    clearHand() {
+        this.hand = []
+    }
 
     bet(amount: number) {
         if (this.folded)
@@ -35,7 +50,18 @@ export class Player {
         return value
     }
 
+    resetBetForRound() {
+        this.currentBet = 0
+    }
+
+    fold() {
+        this.folded = true
+    }
+
     canAct() {
+        return !this.folded && !this.allIn
+    }
+    isActive() {
         return !this.folded && !this.allIn
     }
 

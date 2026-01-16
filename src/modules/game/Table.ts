@@ -8,18 +8,20 @@ import { Player } from "./Player"
 export class Table {
     readonly id: string
 
-    private players: Map<string, Player> = new Map()
+    //private players: Map<string, Player> = new Map()
+    private players: Player[] = []
     private state = new GameState()
     private deckService = new DeckService()
 
-
-    pots: Pot[] = []
     currentTurnIndex = 0
     dealerIndex = 0
-    deckId: string | null = null
+
+    pots: Pot[] = []
+
     communityCards: string[] = []
     currentBet = 0
     minRaise = big_blind
+    deckId: string | null = null
 
     constructor(id: string) {
         this.id = id
@@ -29,38 +31,56 @@ export class Table {
     /*--------------------------------------PLAYER--------------------------------------------*/
 
     activePlayers() {
-        return [...this.players.values()].filter(p => !p.folded)
+        //return [...this.players.values()].filter(p => !p.folded)
+        return this.players.filter(p => !p.folded)
     }
+
     getPlayersAbleToAct() {
-        return this.activePlayers().filter(p => !p.allIn)
+        //return this.activePlayers().filter(p => !p.allIn)
+        return this.players.filter(p => p.canAct())
     }
+
     getCurrentPlayer() {
-        const players = this.getPlayersAbleToAct()
-        if (players.length === 0) throw new Error("Sem jogadores ativos")
-        return players[this.currentTurnIndex]
+        return this.players[this.currentTurnIndex]
+        //const players = this.getPlayersAbleToAct()
+        //if (players.length === 0) throw new Error("Sem jogadores ativos")
+        //return players[this.currentTurnIndex]
     }
 
 
     getPlayer(userId: string) {
-        const p = this.players.get(userId)
+        //const p = this.players.get(userId)
+        const p = this.players.find(p => p.userId === userId)
         if (!p) throw new Error("Jogador inválido")
         return p
     }
 
     addPlayer({ userId, socketId }: { userId: string, socketId: string }) {
-        if (!this.players.has(userId))
-            this.players.set(userId, new Player(userId, socketId))
+        if (this.players.some(p => p.userId === userId)) return
+        this.players.push(new Player(userId, socketId))
     }
 
     removePlayer(userId: string) {
-        this.players.delete(userId)
+        //this.players.delete(userId)
+        this.players = this.players.filter(p => p.userId !== userId)
     }
 
     isPlayerTurn(userId: string): boolean {
-        try {
+        return this.getCurrentPlayer()?.userId === userId
+        /*try {
             return this.getCurrentPlayer().userId === userId
         } catch (err) {
             return false
+        }*/
+    }
+    nextTurn() {
+        const total = this.players.length
+        for (let i = 1; i <= total; i++) {
+            const idx = (this.currentTurnIndex + i) % total
+            if (this.players[idx].canAct()) {
+                this.currentTurnIndex = idx
+                return
+            }
         }
     }
 
@@ -81,40 +101,66 @@ export class Table {
         this.minRaise = big_blind
         this.state.startHand()
 
+        this.players.forEach(p => p.resetForNewHand())
+
         for (const p of this.players.values()) {
             p.resetForNewHand()
             const cards = await this.deckService.draw(this.deckId, 2)
-            p.hand = cards.map(c => c.code)
+            //p.hand = cards.map(c => c.code)
+            p.setPlayerHand(cards.map(c => c.code))
         }
 
         this.postBlinds()
-        const players = this.activePlayers()
+        this.setFirstTurnPreFlop()
+
+
+        /*const players = this.activePlayers()
         if (players.length > 1) {
             this.currentTurnIndex = (this.dealerIndex + 1) % this.activePlayers().length
         } else {
             this.currentTurnIndex = 0
-        }
+        }*/
 
     }
 
     postBlinds() {
-        const players = [...this.players.values()]
+        /*const players = [...this.players.values()]
         if (players.length < 2) return
 
         const sb = players[(this.dealerIndex + 1) % players.length]
         const bb = players[(this.dealerIndex + 2) % players.length]
+        */
+        const sbIndex = (this.dealerIndex + 1) % this.players.length
+        const bbIndex = (this.dealerIndex + 2) % this.players.length
 
-        sb.bet(small_blind)
-        bb.bet(big_blind)
+        this.players[sbIndex].bet(small_blind)
+        this.players[bbIndex].bet(big_blind)
+
+        /*sb.bet(small_blind)
+        bb.bet(big_blind)*/
 
         this.currentBet = big_blind
+        this.minRaise = big_blind
+    }
+
+    setFirstTurnPreFlop() {
+        this.currentTurnIndex = (this.dealerIndex + 3) % this.players.length
+        if (!this.players[this.currentTurnIndex].canAct()) {
+            this.nextTurn()
+        }
+    }
+    setFirstTurnPostFlop() {
+        this.currentTurnIndex = (this.dealerIndex + 1) % this.players.length
+        if (!this.players[this.currentTurnIndex].canAct())
+            this.nextTurn()
     }
 
 
 
     isBettingRoundComplete() {
-        const players = this.activePlayers().filter(p => !p.allIn)
-        if (players.length === 0) return true
+        const players = this.players.filter(p => !p.folded && !p.allIn)
+        /*if (players.length === 0) return true
+        return players.every(p => p.currentBet === this.currentBet)*/
         return players.every(p => p.currentBet === this.currentBet)
     }
 
@@ -123,13 +169,14 @@ export class Table {
             this.resolvePots()
             const winner = this.activePlayers()[0]
             winner.stack += this.getTotalPot()
-            this.pots = []
-            this.state.endHand()
+            /*this.pots = []
+            this.state.endHand()*/
+            this.endHand()
             return { winner: winner.userId }
         }
 
         if (!this.isBettingRoundComplete()) {
-            this.nextPlayer()
+            this.nextTurn()
             return
         }
         this.resolvePots()
@@ -159,7 +206,8 @@ export class Table {
         }
 
         //this.currentTurnIndex = this.dealerIndex % this.activePlayers().length
-        this.currentTurnIndex = 0
+        //this.currentTurnIndex = 0
+        this.setFirstTurnPostFlop()
     }
 
     finishHand() {
@@ -185,40 +233,57 @@ export class Table {
             }
 
             if (best) {
-                this.players.get(best)!.stack += pot.amount
+                //this.players.get(best)!.stack += pot.amount
+                this.getPlayer(best).stack += pot.amount
             }
         }
-        this.state.endHand()
-        this.pots = []
+        /*this.state.endHand()
+        this.pots = []*/
+        this.endHand()
 
         return { winners: [...handRanks.keys()] }
+    }
+
+    endHand() {
+        this.state.endHand()
+        this.pots = []
+        this.communityCards = []
+        this.dealerIndex = (this.dealerIndex + 1) % this.players.length
     }
 
     /* -------------------------------- POTS -------------------------------- */
 
     resolvePots() {
-        const players = this.activePlayers().filter(p => p.currentBet > 0)
-        const betLevels = [...new Set(players.map(p => p.currentBet))].sort((a, b) => a - b)
+        //const players = this.activePlayers().filter(p => p.currentBet > 0)
+        const bets = this.players.filter(p => p.currentBet > 0)
+        const betLevels = [...new Set(bets.map(p => p.currentBet))].sort((a, b) => a - b)
 
         let prev = 0
 
         for (const lv of betLevels) {
-            const eligible = players.filter(p => p.currentBet >= lv)
+            const eligible = bets.filter(p => p.currentBet >= lv)
             const amount = (lv - prev) * eligible.length
 
-            if (amount > 0) {
+            this.pots.push({
+                amount,
+                eligibleUserIds: eligible.map(p => p.userId)
+            })
+
+            /*if (amount > 0) {
                 this.pots.push({
                     amount,
                     eligibleUserIds: eligible.map(p => p.userId)
                 })
-            }
+            }*/
 
             prev = lv
         }
 
-        for (const p of players) {
+        bets.forEach(p => (p.currentBet = 0))
+
+        /*for (const p of players) {
             p.currentBet = 0
-        }
+        }*/
     }
     getTotalPot() {
         return this.pots.reduce((sum, p) => sum + p.amount, 0)
@@ -247,6 +312,16 @@ export class Table {
         }
     }
 
+
+    getLobbyInfo() {
+        return {
+            tableId: this.id,
+            phase: this.getPhase(),
+            players: this.activePlayers().length,
+            canJoin: this.isWaiting()
+        }
+    }
+
     getPhase() {
         return this.state.getPhase()
     }
@@ -264,11 +339,22 @@ export class Table {
     }
 
     isEmpty(): boolean {
-        return this.players.size === 0
+        return this.players.length === 0
     }
 
-    markPlayerDisconnected(socketId: string) {
-        for (const player of this.players.values()) {
+    markPlayerDisconnected(socketId: string) { //verificar se usar socketId é o melhor parametro, pq socketId muda se o navegador atualizar
+        const p = this.players.find(p => p.socketId === socketId)
+        if (!p) return
+
+        p.socketId = ""
+
+        if (!p.allIn && !p.folded) {
+            p.folded = true
+
+            if (this.isPlayerTurn(p.userId))
+                this.nextTurn()
+        }
+        /*for (const player of this.players.values()) {
             if (player.socketId === socketId) {
                 player.socketId = ""
                 if (!player.allIn) {
@@ -277,10 +363,11 @@ export class Table {
                 }
                 return
             }
-        }
+        }*/
     }
+
     reconnectPlayer(userId: string, socketId: string) {
-        const player = this.players.get(userId)
+        const player = this.players.find(p => p.userId === userId)
         if (!player) return
         player.socketId = socketId
     }

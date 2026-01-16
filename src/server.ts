@@ -4,9 +4,17 @@ import { createServer } from 'http';
 import { Server } from 'socket.io'
 import express, { NextFunction, Request, Response } from 'express'
 import { rotas } from './router';
+import cors from 'cors'
+import { registerSocketHandlers } from './modules/socket';
+import { setIO } from './modules/socket/wrappers/io';
 
 
 const app = express()
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}))
 app.use(express.json())
 app.use(rotas)
 
@@ -21,10 +29,11 @@ const httpServer = createServer(app)
 
 const io = new Server(httpServer, {
     cors: {
-        origin: 'http://localhost:5252',
+        origin: '*',
         methods: ["GET", "POST"]
     }
 })
+setIO(io)
 
 io.use((socket, next) => {
     const token = socket.handshake.auth.token
@@ -34,13 +43,14 @@ io.use((socket, next) => {
     next()
 })
 
-io.on('connection', (socket) => {
+registerSocketHandlers(io)
+/*io.on('connection', (socket) => {
     console.log("Cliente conectado", socket.id)
 
     socket.on('disconnect', () => {
         console.log("Cliente desconectado", socket.id)
     })
-})
+})*/
 
 const port = process.env.PORT;
 if (!port) {

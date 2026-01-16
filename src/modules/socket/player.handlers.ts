@@ -9,38 +9,41 @@ type HandlerProps = {
     tableId: string,
     userId: string,
     action: PlayerAction,
-    amount: number
+    amount?: number
 }
 
 export function registerPlayerHandlers(io: Server, socket: Socket) {
-    socket.on("player:action", async ({ tableId, userId, action, amount }: HandlerProps) => {
-        const table = TableStore.getOrCreate(tableId)
-        if (!table) return
+    socket.on("player:action",
+        async ({ tableId, userId, action, amount }: HandlerProps) => {
+            const table = TableStore.getOnly(tableId)
+            if (!table) return
 
-        // valida se é a vez do jogador
-        if (!table.isPlayerTurn(userId)) {
-            socket.emit("player:error", { message: "Não é sua vez" })
-            return
-        }
-
-        try {
-            PokerEngine.execute(
-                table,
-                userId,
-                action,
-                amount
-            )
-
-            const result = await table.onPlayerActionComplete()
-
-            io.to(tableId).emit("table:update", table.getPublicState())
-
-            if (result) {
-                io.to(tableId).emit("game:end", result)
+            // valida se é a vez do jogador
+            if (!table.isPlayerTurn(userId)) {
+                console.log("Não é a vez do jogador", userId)
+                socket.emit("player:error", { message: "Não é sua vez" })
+                return
             }
+            console.log(`Jogador ${userId} executando ação ${action}`)
 
-        } catch (err: any) {
-            socket.emit("error", { message: err.message })
-        }
-    })
+            try {
+                PokerEngine.execute(
+                    table,
+                    userId,
+                    action,
+                    amount
+                )
+
+                const result = await table.onPlayerActionComplete()
+
+                io.to(tableId).emit("table:update", table.getPublicState())
+
+                if (result) {
+                    io.to(tableId).emit("game:end", result)
+                }
+
+            } catch (err: any) {
+                socket.emit("player:error", { message: err.message })
+            }
+        })
 }
