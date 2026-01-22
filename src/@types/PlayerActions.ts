@@ -3,5 +3,8 @@ export enum PlayerAction {
     CHECK = 'check',
     CALL = 'call',
     BET = 'bet',
-    RAISE = 'raise'
+    RAISE = 'raise',
+    ALLIN = 'allin',
+    PREPARED = 'prepared',
+    UNPREPARED = 'unprepared'
 }

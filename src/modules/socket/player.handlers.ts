@@ -24,7 +24,7 @@ export function registerPlayerHandlers(io: Server, socket: Socket) {
                 socket.emit("player:error", { message: "Não é sua vez" })
                 return
             }
-            console.log(`Jogador ${userId} executando ação ${action}`)
+            //console.log(`Jogador ${userId} executando ação ${action}`)
 
             try {
                 PokerEngine.execute(
@@ -34,7 +34,7 @@ export function registerPlayerHandlers(io: Server, socket: Socket) {
                     amount
                 )
 
-                const result = await table.onPlayerActionComplete()
+                const result = table.onPlayerActionComplete()
 
                 io.to(tableId).emit("table:update", table.getPublicState())
 

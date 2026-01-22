@@ -6,54 +6,73 @@ import { TableStore } from "../store/TableStore"
 export function registerTableHandlers(io: Server, socket: Socket) {
 
 
-    socket.on("table:create", () => {
-
+    socket.on("table:new", () => {
+        console.log("criando mesa")
+        TableStore.create()
+        const tables = TableStore.getAllTables().map(t => t.getLobbyInfo())
+        io.emit("table:listing", tables)
     })
+
+    /*socket.on("table:created", () => {
+        console.log("criando mesa")
+        TableStore.create()
+        const tables = TableStore.getAllTables().map(t => t.getLobbyInfo())
+        io.emit("table:listing", tables)
+    })*/
     socket.on("table:list", () => {
         const tables = TableStore.getAllTables().map(t => t.getLobbyInfo())
-        socket.emit("table:list", tables)
+        socket.emit("table:listing", tables)
     })
 
     socket.on("table:join", ({ tableId, userId }) => {
         const table = TableStore.ensureTable(tableId)
-
 
         if (!table.isWaiting()) {
             socket.emit("table:error", { message: "Mesa já em andamento" })
             return
         }
 
-        const players = table.activePlayers()
-        console.log("Jogadores na mesa: ", players)
+        const players = table.getAllPlayers()
+        console.log("Jogadores na mesa antes de jogador entrar: ", players)
 
         //if (players.length > 0) {
-        const hasPlayer = players.some(p => p.userId === userId)
+        //const hasPlayer = players.some(p => p.userId === userId)
+        const hasPlayer = players.find(p => p.userId === userId)
+
+        let isNewPlayer = false
+        let isReconnect = false
+
         if (hasPlayer) {
-            console.log("reconectando jogador", userId)
-            table.reconnectPlayer(userId, socket.id)
+            if (!hasPlayer.connected) {
+                console.log("reconectando jogador", userId)
+                table.reconnectPlayer(userId, socket.id)
+                isReconnect = true
+            } else {
+                console.log("Jogador já está connectado", userId)
+                hasPlayer.socketId = socket.id
+            }
         } else {
             table.addPlayer({ userId, socketId: socket.id })
             console.log("jogador entrou na mesa", userId)
+            isNewPlayer = true
         }
-        /*} else {
-            table.addPlayer({
-                userId,
-                socketId: socket.id
-            })
-            console.log("jogador entrou na mesa", userId)
-        }*/
-
 
         socket.join(tableId)
 
         // envia estado apenas para quem entrou
         socket.emit("table:state", table.getPublicState(userId))
 
+        if (isNewPlayer || isReconnect) {
+            const tables = TableStore.getAllTables().map(t => t.getLobbyInfo())
+            io.emit("table:listing", tables)
+            socket.to(tableId).emit("table:playerJoined", table.getPublicState())
+        }
+        //io.emit("table:update", table.getPublicState())
 
         // avisa os outros jogadores
-        socket.to(tableId).emit("table:playerJoined", {
-            userId
-        })
+        /*if (isNewPlayer) {
+            socket.to(tableId).emit("table:playerJoined", table.getPublicState())
+        }*/
     })
 
     socket.on("table:leave", ({ tableId, userId }) => {
@@ -68,6 +87,7 @@ export function registerTableHandlers(io: Server, socket: Socket) {
 
 
     socket.on("table:start-hand", async ({ tableId }) => {
+        console.log("jogador iniciando mão", tableId)
         const table = TableStore.getOnly(tableId)
         if (!table) return
 
@@ -77,8 +97,15 @@ export function registerTableHandlers(io: Server, socket: Socket) {
         await table.startHand()
 
         io.to(tableId).emit("table:update", table.getPublicState())
-    })
 
+        for (const p of table.getPlayersAbleToAct()) {
+            if (!p.socketId) continue
+
+            io.to(p.socketId).emit("player:hand", {
+                hand: p.hand
+            })
+        }
+    })
 
     socket.on("disconnect", () => {
         const tables = TableStore.findBySocket(socket.id)
@@ -86,7 +113,9 @@ export function registerTableHandlers(io: Server, socket: Socket) {
         for (const table of tables) {
             table.markPlayerDisconnected(socket.id)
             io.to(table.id).emit("table:update", table.getPublicState())
-        }
-    })
 
+        }
+        const t = TableStore.getAllTables().map(tt => tt.getLobbyInfo())
+        io.emit("table:listing", t)
+    })
 }

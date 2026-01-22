@@ -1,17 +1,20 @@
+import { connected } from "process"
+import { Card } from "../../@types/mainDeck"
 import { Pot } from "../../@types/Pot"
-import { DeckService } from "../services/DeckService"
+import { Deck } from "../deck/deck"
+//import { DeckService } from "../services/DeckService"
 import { big_blind, small_blind } from "./Constants"
 import { GameState } from "./GameState"
 import { HandEvaluator } from "./HandEvaluator"
 import { Player } from "./Player"
 
 export class Table {
+
     readonly id: string
 
-    //private players: Map<string, Player> = new Map()
     private players: Player[] = []
     private state = new GameState()
-    private deckService = new DeckService()
+    private deck!: Deck
 
     currentTurnIndex = 0
     dealerIndex = 0
@@ -21,7 +24,6 @@ export class Table {
     communityCards: string[] = []
     currentBet = 0
     minRaise = big_blind
-    deckId: string | null = null
 
     constructor(id: string) {
         this.id = id
@@ -30,26 +32,30 @@ export class Table {
 
     /*--------------------------------------PLAYER--------------------------------------------*/
 
+    getAllPlayers() {
+        return this.players
+    }
+
     activePlayers() {
         //return [...this.players.values()].filter(p => !p.folded)
         return this.players.filter(p => !p.folded)
     }
+    getConnectedPlayers() {
+        return this.players.filter(p => p.connected)
+    }
+    getDisconnectedPlayers() {
+        return this.players.filter(p => !p.connected)
+    }
 
     getPlayersAbleToAct() {
-        //return this.activePlayers().filter(p => !p.allIn)
         return this.players.filter(p => p.canAct())
     }
 
     getCurrentPlayer() {
         return this.players[this.currentTurnIndex]
-        //const players = this.getPlayersAbleToAct()
-        //if (players.length === 0) throw new Error("Sem jogadores ativos")
-        //return players[this.currentTurnIndex]
     }
 
-
     getPlayer(userId: string) {
-        //const p = this.players.get(userId)
         const p = this.players.find(p => p.userId === userId)
         if (!p) throw new Error("Jogador inválido")
         return p
@@ -61,7 +67,6 @@ export class Table {
     }
 
     removePlayer(userId: string) {
-        //this.players.delete(userId)
         this.players = this.players.filter(p => p.userId !== userId)
     }
 
@@ -84,29 +89,34 @@ export class Table {
         }
     }
 
+    /*
     nextPlayer() {
         const players = this.getPlayersAbleToAct()
         if (players.length <= 1) return
 
         this.currentTurnIndex = (this.currentTurnIndex + 1) % players.length
     }
+     */
 
     /* -------------------------------- HAND FLOW -------------------------------- */
 
     async startHand() {
-        this.deckId = await this.deckService.createDeck()
+        this.deck = new Deck()
+
         this.communityCards = []
         this.pots = []
         this.currentBet = 0
         this.minRaise = big_blind
+
+        // ATUALIZA A FASE
         this.state.startHand()
 
-        this.players.forEach(p => p.resetForNewHand())
+        //this.players.forEach(p => p.resetForNewHand())
+
 
         for (const p of this.players.values()) {
             p.resetForNewHand()
-            const cards = await this.deckService.draw(this.deckId, 2)
-            //p.hand = cards.map(c => c.code)
+            const cards = this.deck.draw(2)
             p.setPlayerHand(cards.map(c => c.code))
         }
 
@@ -164,7 +174,7 @@ export class Table {
         return players.every(p => p.currentBet === this.currentBet)
     }
 
-    async onPlayerActionComplete() {
+    onPlayerActionComplete() {
         if (this.activePlayers().length === 1) {
             this.resolvePots()
             const winner = this.activePlayers()[0]
@@ -172,36 +182,42 @@ export class Table {
             /*this.pots = []
             this.state.endHand()*/
             this.endHand()
+            console.log("só tem um jogador ativo")
             return { winner: winner.userId }
         }
 
+        //Proximo jogador
         if (!this.isBettingRoundComplete()) {
+            console.log("proximo jogador?")
             this.nextTurn()
             return
         }
         this.resolvePots()
         this.currentBet = 0
         this.minRaise = big_blind
+        console.log("indo pra próxima fase")
 
-        return await this.nextPhase()
+        return this.nextPhase()
     }
 
-    async nextPhase() {
+    nextPhase() {
         this.state.next()
         const phase = this.state.getPhase()
-
-        if (!this.deckId) return
+        console.log("fase atual", phase)
 
         if (phase === 'flop') {
-            const c = await this.deckService.draw(this.deckId, 3)
+            const c = this.deck.draw(3)
+            console.log("cartas comunitarias fase flop", c)
             this.communityCards.push(...c.map(x => x.code))
         }
         if (phase === "turn" || phase === "river") {
-            const c = await this.deckService.draw(this.deckId, 1)
+            const c = this.deck.draw(1)
+            console.log("cartas comunitarias fase turn ou river", c)
             this.communityCards.push(c[0].code)
         }
 
         if (phase === "showdown") {
+            console.log("finishHand sendo chamado")
             return this.finishHand()
         }
 
@@ -268,23 +284,12 @@ export class Table {
                 amount,
                 eligibleUserIds: eligible.map(p => p.userId)
             })
-
-            /*if (amount > 0) {
-                this.pots.push({
-                    amount,
-                    eligibleUserIds: eligible.map(p => p.userId)
-                })
-            }*/
-
             prev = lv
         }
 
         bets.forEach(p => (p.currentBet = 0))
-
-        /*for (const p of players) {
-            p.currentBet = 0
-        }*/
     }
+
     getTotalPot() {
         return this.pots.reduce((sum, p) => sum + p.amount, 0)
     }
@@ -301,14 +306,20 @@ export class Table {
             turnUserId: this.getPlayersAbleToAct()[this.currentTurnIndex]?.userId,
             minRaise: this.minRaise,
             currentBet: this.currentBet,
-            players: [...this.players.values()].map((p) => ({
+            players: this.players.map((p) => ({
                 userId: p.userId,
                 stack: p.stack,
                 folded: p.folded,
                 allIn: p.allIn,
                 isYou: p.userId === uid,
-                hand: p.userId === uid ? p.hand : undefined
+                hand: p.userId === uid ? p.hand : undefined,
+                prepared: p.ready,
+                connected: p.connected
             })),
+            deck: {
+                id: this.deck.id,
+                remaining: this.deck.remaining()
+            }
         }
     }
 
@@ -317,7 +328,7 @@ export class Table {
         return {
             tableId: this.id,
             phase: this.getPhase(),
-            players: this.activePlayers().length,
+            players: this.getConnectedPlayers().length,
             canJoin: this.isWaiting()
         }
     }
@@ -346,6 +357,7 @@ export class Table {
         const p = this.players.find(p => p.socketId === socketId)
         if (!p) return
 
+        p.connected = false
         p.socketId = ""
 
         if (!p.allIn && !p.folded) {
@@ -370,6 +382,7 @@ export class Table {
         const player = this.players.find(p => p.userId === userId)
         if (!player) return
         player.socketId = socketId
+        player.connected = true
     }
 
     /*

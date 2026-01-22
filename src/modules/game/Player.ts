@@ -11,12 +11,15 @@ export class Player {
     currentBet = 0
     folded = false
     allIn = false
+    ready: boolean
+    connected: boolean = true
 
 
     constructor(userId: string, socketId: string, stack = 1000) {
         this.userId = userId
         this.socketId = socketId
         this.stack = stack
+        this.ready = false
     }
     addCard(card: string) {
         if (this.hand.length >= 2) throw new Error("Jogador já possui cartas na mão")
@@ -70,5 +73,12 @@ export class Player {
         this.currentBet = 0
         this.folded = false
         this.allIn = false
+    }
+
+    setPlayerReady() {
+        this.ready = true
+    }
+    setPlayerUnready() {
+        this.ready = false
     }
 }

@@ -17,7 +17,7 @@ export class PokerEngine {
         action: PlayerAction,
         amount?: number
     ) {
-        if ((action === PlayerAction.BET || action === PlayerAction.RAISE) && (amount == null || amount <= 0 || amount))
+        if ((action === PlayerAction.BET || action === PlayerAction.RAISE) && (amount == null || amount <= 0 || !amount))
             throw new Error("informe um valor válido")
 
         switch (action) {
@@ -36,6 +36,15 @@ export class PokerEngine {
             case PlayerAction.RAISE:
                 return this.raise(table, userId, amount!)
 
+            case PlayerAction.ALLIN:
+                return this.allIn(table, userId)
+
+            case PlayerAction.PREPARED:
+                return this.playerReady(table, userId)
+
+            case PlayerAction.UNPREPARED:
+                return this.playerUnready(table, userId)
+
             default:
                 throw new Error("Ação inválida")
         }
@@ -43,7 +52,7 @@ export class PokerEngine {
 
     static fold(table: Table, userId: string) {
         this.ensureCanAct(table)
-        table.getPlayer(userId).folded = true
+        table.getPlayer(userId).fold()
     }
 
     static call(table: Table, userId: string) {
@@ -107,8 +116,43 @@ export class PokerEngine {
 
         if (!table.canPlayerCheck(userId)) throw new Error("Check inválido")
         /*
-        const player = table.getPlayer(userId)
-        if (player?.currentBet !== table.currentBet) throw new Error("Check inválido")
-    */
+            const player = table.getPlayer(userId)
+            if (player?.currentBet !== table.currentBet) throw new Error("Check inválido")
+        */
+    }
+
+    static allIn(table: Table, userId: string) {
+        this.ensureCanAct(table)
+
+        const p = table.getPlayer(userId)
+
+        if (p.stack <= 0)
+            throw new Error("Jogador sem fichas")
+
+        const toCall = table.currentBet - p.currentBet
+        const allInAmount = p.stack
+
+        p.bet(allInAmount)
+        p.allIn = true
+
+        const totalBet = p.currentBet
+
+        if (totalBet > table.currentBet) {
+            const raiseValue = totalBet - table.currentBet
+
+            if (raiseValue >= table.minRaise) {
+                table.minRaise = raiseValue
+            }
+
+            table.currentBet = totalBet
+        }
+    }
+    static playerReady(table: Table, uid: string) {
+        const p = table.getPlayer(uid)
+        p.setPlayerReady()
+    }
+    static playerUnready(table: Table, uid: string) {
+        const p = table.getPlayer(uid)
+        p.setPlayerUnready()
     }
 }

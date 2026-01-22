@@ -1,4 +1,5 @@
 //armazenamento em memoria ou Redis
+import { nanoid } from "nanoid"
 import { Table } from "../game/Table"
 import { emit } from "../socket/wrappers/io"
 
@@ -6,9 +7,11 @@ class TableStoreClass {
     private tables: Map<string, Table> = new Map()
 
     // Cria uma table
-    create(tableId: string): Table {
-        const table = new Table(tableId)
-        this.tables.set(tableId, table)
+    create(): Table {
+        const id = nanoid()
+        if (!id) throw new Error("Erro ao gerar id da mesa")
+        const table = new Table(id)
+        this.tables.set(id, table)
         emit("table:created", table.getLobbyInfo())
         console.log("table criada")
         return table
@@ -25,9 +28,9 @@ class TableStoreClass {
 
         return table
     }*/
-    ensureTable(tableId: string): Table {
-        const table = this.tables.get(tableId)
-        if (!table) return this.create(tableId)
+    ensureTable(id: string): Table {
+        const table = this.tables.get(id)
+        if (!table) return this.create()
         return table
 
     }

@@ -12,20 +12,20 @@ rotas.get('/online', (req, res) => {
     return res.status(200).json({ message: 'online' })
 })
 
-rotas.get("/new/table", async (req, res) => {
+/*rotas.get("/new/table", async (req, res) => {
 
     if (!url) throw new Error("URL da api não definida nas variáveis de ambiente.")
     try {
         const { data } = await axios.get<NewTableResponse>(`${url}/new/shuffle/`)
-        TableStore.create(data.deck_id)
+
         return res.status(201).json(data)
     } catch (err: any) {
         console.log("Erro ao abrir deck/criar table", err)
         return res.status(500).json(err.response?.data)
     }
-})
+})*/
 
-rotas.get('/:id/draw', async (req, res) => {
+/*rotas.get('/:id/draw', async (req, res) => {
     if (!url) throw new Error("URL da api não definida nas variáveis de ambiente.")
     const { amount } = req.query
     const { id } = req.params
@@ -38,11 +38,11 @@ rotas.get('/:id/draw', async (req, res) => {
         console.log("Erro ao baixar cartas", err.response?.data)
         return res.status(500).json(err.response?.data)
     }
-})
+})*/
 
 rotas.get('/tables', (req, res) => {
     const tables = TableStore.getAllTables().map(t => t.getLobbyInfo())
-    console.log("tables em andamento: ", tables)
+    //console.log("tables em andamento: ", tables)
     return res.status(200).json(tables)
 })
 
